@@ -11,11 +11,13 @@ import android.view.SurfaceHolder
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.MediaController
+import android.widget.SeekBar
 import android.widget.VideoView
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.android.synthetic.main.controller_layout.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -27,17 +29,54 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        updatePlayerProgress()
         playerViewModel = ViewModelProvider(this).get(PlayerViewModel::class.java).apply {
             progressBarVisibility.observe(this@MainActivity, Observer {
                 progressBar3.visibility = it
             })
             videoResolution.observe(this@MainActivity, Observer {
+                seekBar.max = mediaPlayer.duration
                 playerFrame.post {// 放到消息队列中
                     resizePlayer(it.first, it.second)
                 }
             })
+            controllerFrameVisibility.observe(this@MainActivity, Observer {
+                controllerFrame.visibility = it
+            })
+            bufferPercent.observe(this@MainActivity, Observer {
+                seekBar.secondaryProgress = seekBar.max * it / 100
+            })
+            playerStatus.observe(this@MainActivity, Observer {
+                imageView.isClickable = true
+                when(it) {
+                    PlayerStatus.Paused -> imageView.setImageResource(R.drawable.ic_baseline_play_arrow_24)
+                    PlayerStatus.Completed -> imageView.setImageResource(R.drawable.ic_baseline_replay_24)
+                    PlayerStatus.NotReady -> imageView.isClickable = false
+                    else -> imageView.setImageResource(R.drawable.ic_baseline_pause_24)
+                }
+            })
         }
         lifecycle.addObserver(playerViewModel.mediaPlayer)
+        imageView.setOnClickListener {
+            playerViewModel.togglePlayerStatus()
+        }
+        playerFrame.setOnClickListener {
+            playerViewModel.toggleControllerVisibility()
+        }
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {// 是否是用户拖动进度条
+                    playerViewModel.playerSeekToProgress(progress)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+            }
+
+        })
         surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder?) {
             }
@@ -90,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             hideSystemUI()
+            playerViewModel.emmitVideoResolution()
         }
     }
 
@@ -103,11 +143,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_FULLSCREEN)
+    }
+
+    private fun updatePlayerProgress() {
+        lifecycleScope.launch {
+            while (true) {
+                delay(500)
+                seekBar.progress = playerViewModel.mediaPlayer.currentPosition
+            }
+        }
     }
 }
